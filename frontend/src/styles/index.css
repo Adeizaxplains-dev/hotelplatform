@@ -1,0 +1,102 @@
+@import "tailwindcss";
+@import "@fontsource-variable/manrope";
+@import "@fontsource-variable/fraunces";
+
+/*
+ * Design tokens. Every colour pair used for text was contrast-checked (WCAG AA, most AAA):
+ * ink/canvas 14.9:1, muted/white 6.0:1, white/lagoon-600 6.0:1, status text on its tint >= 5.8:1.
+ * Status is always shown with an icon AND a label, never colour alone.
+ */
+@theme {
+  --font-sans: "Manrope Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-ink: #0f2230;
+  --color-muted: #516576;
+  --color-canvas: #f2f5f7;
+  --color-surface: #ffffff;
+  --color-line: #d5dde3;
+  --color-line-strong: #7a8b99;
+
+  --color-lagoon-50: #e4f3f2;
+  --color-lagoon-100: #c6e6e4;
+  --color-lagoon-600: #0b6e6e;
+  --color-lagoon-700: #095a5a;
+  --color-brass-500: #d9a441;
+
+  --color-success-50: #e3f5eb;
+  --color-success-700: #0b6b3f;
+  --color-warning-50: #fff3d6;
+  --color-warning-700: #7a4f00;
+  --color-danger-50: #fdebe9;
+  --color-danger-600: #b3261e;
+  --color-danger-700: #a62119;
+  --color-info-50: #e7f0fb;
+  --color-info-700: #1a559b;
+  --color-neutral-100: #e9eef2;
+  --color-neutral-700: #3f5263;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-card: 0 1px 2px rgb(15 34 48 / 0.06), 0 6px 16px -8px rgb(15 34 48 / 0.12);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background: var(--color-canvas);
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    min-height: 100dvh;
+    font-size: 1rem;
+    line-height: 1.55;
+    font-feature-settings: "tnum" 1; /* tabular figures: prices and room counts align in tables */
+  }
+  h1, h2, h3 { letter-spacing: -0.015em; line-height: 1.15; }
+  :focus-visible { outline: 3px solid var(--color-lagoon-600); outline-offset: 2px; border-radius: var(--radius-sm); }
+  ::placeholder { color: var(--color-muted); opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+  }
+}
+
+/*
+ * Public hotel site: every hotel supplies two colours and a type style; src/lib/color.ts turns them into the
+ * variables below (with contrast checks). Defaults match the platform palette.
+ */
+:root {
+  --brand: #0b6e6e;
+  --brand-hover: #095a5a;
+  --on-brand: #ffffff;
+  --on-brand-hover: #ffffff;
+  --brand-text: #0b6e6e;
+  --brand-soft: #e4f3f2;
+  --accent: #b8863b;
+  --accent-text: #7a5a1f;
+  --site-display: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+}
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-on-brand: var(--on-brand);
+  --color-brand-text: var(--brand-text);
+  --color-brand-soft: var(--brand-soft);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --font-display: var(--site-display);
+}
+.site-root :focus-visible { outline-color: var(--brand-text); }
+.site-root h1, .site-root h2, .site-root h3 { font-family: var(--site-display); }
+@media (prefers-reduced-motion: no-preference) {
+  .rise { animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+}
+
+@media print {
+  body.printing-invoice #root * { visibility: hidden !important; }
+  body.printing-invoice #root .invoice-print-target,
+  body.printing-invoice #root .invoice-print-target * { visibility: visible !important; }
+  body.printing-invoice #root .invoice-print-target { position: absolute !important; inset: 0 auto auto 0 !important; width: 100% !important; border: 0 !important; box-shadow: none !important; }
+}

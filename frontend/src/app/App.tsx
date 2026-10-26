@@ -1,0 +1,18 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
+import { RouterProvider } from "react-router-dom";
+import { AuthProvider } from "@/features/auth/AuthContext";
+import { createQueryClient } from "./queryClient";
+import { createRouter } from "./router";
+
+export default function App() {
+  const [queryClient] = useState(createQueryClient);
+  const [router] = useState(createRouter);
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}

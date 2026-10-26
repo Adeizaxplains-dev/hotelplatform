@@ -1,0 +1,29 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { RefreshCw, ShieldCheck } from "lucide-react";
+import { Alert } from "@/components/feedback/Alert";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Input";
+import { formatMoney } from "@/lib/format";
+import { ApiError } from "@/services/apiClient";
+import { adminApi } from "@/services/adminApi";
+import { useAuth } from "@/features/auth/AuthContext";
+import { can } from "@/permissions";
+import { AdminPage, QueryBoundary } from "../components/AdminPage";
+const today = () => new Date().toISOString().slice(0, 10);
+const monthStart = () => `${today().slice(0, 8)}01`;
+export default function PaymentControlsPage() {
+  const { me } = useAuth(); const mayRefund = can(me, "payments.refund");
+  const [from, setFrom] = useState(monthStart()); const [to, setTo] = useState(today()); const [error, setError] = useState(""); const qc = useQueryClient();
+  const reconciliation = useQuery({ queryKey: ["admin", "payment-reconciliation", from, to], queryFn: () => adminApi.paymentReconciliation(from, to), enabled: /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from <= to });
+  const refunds = useQuery({ queryKey: ["admin", "refunds"], queryFn: () => adminApi.refunds() });
+  const refund = useMutation({ mutationFn: ({ paymentId, reason }: { paymentId: string; reason: string }) => adminApi.requestRefund(paymentId, reason), onSuccess: async (result) => { setError(result.warning ?? ""); await qc.invalidateQueries({ queryKey: ["admin", "refunds"] }); await qc.invalidateQueries({ queryKey: ["admin", "payment-reconciliation"] }); }, onError: (e) => setError(e instanceof ApiError ? e.message : "The refund request could not be completed.") });
+  return <AdminPage title="Payment controls" description="Compare recorded successful payments with Paystack and track full-refund requests. Reconciliation is read-only; it never silently edits financial records.">
+    <div className="grid max-w-xl gap-3 sm:grid-cols-2"><Input label="From date" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /><Input label="To date" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+    {from > to && <Alert tone="danger" title="Invalid date range">The start date must be on or before the end date.</Alert>}
+    {error && <Alert tone="warning" title="Payment action needs attention">{error}</Alert>}
+    <section className="grid gap-3"><h2 className="text-lg font-bold">Gateway reconciliation</h2><QueryBoundary query={reconciliation} what="payment reconciliation">{(r) => <><p className="text-sm text-muted">Hotel timezone: {r.timezone} · {r.from} to {r.to} · Checked {r.checked} of {r.total} payments on this page.</p>{r.items.length ? r.items.map((item) => <Card key={item.paymentId} className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center"><div><div className="flex flex-wrap items-center gap-2"><strong>{item.reservationReference}</strong><span className={`rounded-full px-2 py-1 text-xs font-bold ${item.result === "MATCH" ? "bg-emerald-100 text-emerald-900" : item.result === "MISMATCH" ? "bg-red-100 text-red-900" : "bg-amber-100 text-amber-900"}`}>{item.result}</span></div><p className="mt-1 text-sm text-muted">Payment {item.reference} · Gateway: {item.gatewayStatus} · Local: {item.localStatus}</p>{item.issues.length > 0 && <p className="mt-1 text-sm text-danger-700">{item.issues.join(", ")}</p>}<p className="mt-1 font-semibold">{formatMoney(item.amount, item.currency)}{item.paidAt ? ` · ${new Date(item.paidAt).toLocaleString()}` : ""}</p></div>{mayRefund && <Button variant="secondary" disabled={refund.isPending || item.localStatus !== "SUCCESS"} loading={refund.isPending && refund.variables?.paymentId === item.paymentId} onClick={() => { const reason = window.prompt(`Request a FULL refund for ${item.reference}. Enter the reason (minimum 5 characters):`); if (reason && reason.trim().length >= 5 && window.confirm("This sends a real full-refund request to Paystack. Continue only if authorized.")) { setError(""); refund.mutate({ paymentId: item.paymentId, reason: reason.trim() }); } }}>Request full refund</Button>}</Card>) : <Card className="p-5 text-sm text-muted">No successful payments were found in this date range.</Card>}<Card className="p-4 text-sm text-muted">{r.note} The current view checks at most 25 records per page; use narrower date ranges if needed.</Card></>}</QueryBoundary></section>
+    <section className="grid gap-3"><div className="flex items-center gap-2"><ShieldCheck className="size-5" /><h2 className="text-lg font-bold">Refund history</h2><Button variant="ghost" size="sm" icon={<RefreshCw className="size-4" />} onClick={() => void refunds.refetch()}>Refresh</Button></div><QueryBoundary query={refunds} what="refund history">{(r) => r.items.length ? r.items.map((item) => <Card key={item.id} className="p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-bold">{item.reservationReference} · {formatMoney(item.amount, item.currency)}</p><p className="text-sm text-muted">Payment {item.paymentReference} · Requested {new Date(item.requestedAt).toLocaleString()}</p><p className="mt-1 text-sm">Reason: {item.reason}</p>{item.gatewayRefundReference && <p className="text-xs text-muted">Gateway refund: {item.gatewayRefundReference}</p>}{item.providerMessage && <p className="mt-1 text-sm text-muted">Provider: {item.providerMessage}</p>}</div><span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-bold">{item.status}</span></div></Card>) : <Card className="p-5 text-sm text-muted">No refund requests recorded yet.</Card>}</QueryBoundary></section>
+  </AdminPage>;
+}

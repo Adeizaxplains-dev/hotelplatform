@@ -1,0 +1,34 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+*.tsbuildinfo
+.vite/
+
+backend/uploads/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated files
+node_modules/
+dist/
+coverage/
+
+# Local backup copy
+/backend-before-type-fixes-20261023-003139/
+
+# Temporary build and diagnostic logs
+backend/build-errors*.txt
+backend/unit-test-results.txt
+
+# Backup files
+*.bak
+*.backup
+backend/type-fix-backup-*/
