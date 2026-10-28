@@ -14,6 +14,21 @@ export const createTenantSchema = z.object({
   currency: z.string().trim().length(3).toUpperCase().optional(),
 }).strict();
 
+
+export const editTenantSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  timezone: z.string().trim().min(3).max(60).refine((value) => {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date(0));
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Use a valid IANA timezone."),
+  currency: z.string().trim().length(3).toUpperCase(),
+}).strict();
+
+
 export const tenantIdParams = z.object({ id: objectIdSchema }).strict();
 export const featureParams = z.object({ id: objectIdSchema, feature: z.enum(FEATURES) }).strict();
 export const domainParams = z.object({ id: objectIdSchema, hostname: z.string().min(4).max(253) }).strict();

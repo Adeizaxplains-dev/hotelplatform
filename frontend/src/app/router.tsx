@@ -200,6 +200,7 @@ export const routes: RouteObject[] = [
     ],
   },
 
+
   // Platform administration is separate from hotel staff management.
   {
     element: <RequireAuth roles={["PLATFORM_SUPER_ADMIN"]} />,
@@ -208,8 +209,13 @@ export const routes: RouteObject[] = [
         path: "/platform",
         ...lazyPage(() => import("@/pages/PlatformHomePage")),
       },
+      {
+        path: "/platform/tenants/:id",
+        ...lazyPage(() => import("@/pages/PlatformTenantDetailPage")),
+      },
     ],
   },
+
 
   // Registered only in development; Vite removes the branch from production builds.
   ...(import.meta.env.DEV

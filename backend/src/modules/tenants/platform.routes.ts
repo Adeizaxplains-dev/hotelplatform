@@ -12,7 +12,7 @@ import { requestMeta } from "../auth/auth.controller.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { PlatformService } from "./platform.service.js";
 import type { TenantService } from "./tenant.service.js";
-import { createTenantSchema, domainParams, domainSchema, featureParams, limitsSchema, listQuerySchema, overrideSchema, planSchema, statusSchema, tenantIdParams, trialSchema, subscriptionAdminSchema, type CreateTenantBody } from "./platform.schemas.js";
+import { createTenantSchema, editTenantSchema, domainParams, domainSchema, featureParams, limitsSchema, listQuerySchema, overrideSchema, planSchema, statusSchema, tenantIdParams, trialSchema, subscriptionAdminSchema, type CreateTenantBody } from "./platform.schemas.js";
 
 const h = (fn: (req: Request, res: Response) => Promise<void>): RequestHandler => (req, res, next) => void fn(req, res).catch(next);
 
@@ -46,6 +46,27 @@ export function createPlatformRouter(auth: AuthService, platform: PlatformServic
     sendSuccess(res, await platform.detail(idOf(res)));
   }));
 
+  router.patch(
+  "/tenants/:id",
+  requirePermission("platform.tenants.update"),
+  validate({
+    params: tenantIdParams,
+    body: editTenantSchema,
+  }),
+  h(async (req, res) => {
+    const { body } = getValidated<z.infer<typeof editTenantSchema>>(res);
+
+    sendSuccess(
+      res,
+      await platform.updateDetails(
+        actor(res),
+        idOf(res),
+        body,
+        requestMeta(req, res),
+      ),
+    );
+  }),
+);
   router.patch("/tenants/:id/status", requirePermission("platform.tenants.update"), validate({ params: tenantIdParams, body: statusSchema }), h(async (req, res) => {
     const { body } = getValidated<z.infer<typeof statusSchema>>(res);
     sendSuccess(res, await platform.setStatus(actor(res), idOf(res), body.status, body.reason, requestMeta(req, res)));

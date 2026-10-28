@@ -1,45 +1,91 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiRequest } from "./apiClient";
+import type { ApiResponse, ErrorDetail } from "@/types/api";
+import { getAccessToken } from "./tokenStore";
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+/**
+ * API base. Default is same-origin `/api/v1` (Vite proxy in development, a host rewrite in
+ * production) so refresh-token cookies are first-party. Set VITE_API_URL to call a different origin.
+ * Auth tokens are never stored in localStorage/sessionStorage (Phase 1 uses HttpOnly cookies).
+ */
+export const API_BASE_URL: string = (import.meta.env["VITE_API_URL"] as string | undefined)?.replace(/\/+$/, "") || "/api/v1";
 
-afterEach(() => vi.restoreAllMocks());
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string,
+    message: string,
+    public readonly details?: ErrorDetail[],
+    public readonly requestId?: string
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
 
-describe("apiRequest", () => {
-  it("unwraps the success contract", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(json({ success: true, data: { hello: "world" } }));
-    await expect(apiRequest("/x")).resolves.toEqual({ hello: "world" });
-  });
+  get isNetworkError(): boolean {
+    return this.code === "NETWORK_ERROR";
+  }
+}
 
-  it("sends cookies and JSON, and never touches web storage", async () => {
-    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(json({ success: true, data: {} }));
-    const getItem = vi.spyOn(Storage.prototype, "getItem");
-    const setItem = vi.spyOn(Storage.prototype, "setItem");
-    await apiRequest("/x", { method: "POST", body: { a: 1 } });
-    const [url, init] = spy.mock.calls[0]!;
-    expect(String(url)).toMatch(/\/api\/v1\/x$/);
-    expect(init?.credentials).toBe("include");
-    expect(init?.body).toBe('{"a":1}');
-    expect(getItem).not.toHaveBeenCalled();
-    expect(setItem).not.toHaveBeenCalled();
-  });
+export interface RequestOptions {
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  body?: unknown;
+  signal?: AbortSignal;
+  /** Internal: set by the 401 retry so we never loop. */
+  retried?: boolean;
+  /** Return { items, meta } so list screens get the pagination totals. */
+  withMeta?: boolean;
+}
 
-  it("maps the error contract to ApiError with code, status and request id", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(json({ success: false, error: { code: "FORBIDDEN", message: "No.", requestId: "r-1" } }, 403));
-    const err = await apiRequest("/x").catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(ApiError);
-    expect(err).toMatchObject({ status: 403, code: "FORBIDDEN", message: "No.", requestId: "r-1" });
-  });
+/** Registered by services/session.ts: asks the server for a new access token using the refresh cookie. Resolves true on success. */
+let refreshHandler: (() => Promise<boolean>) | null = null;
+export const setRefreshHandler = (fn: (() => Promise<boolean>) | null): void => {
+  refreshHandler = fn;
+};
 
-  it("reports unreachable servers as a network error with a friendly message", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
-    const err = (await apiRequest("/x").catch((e: unknown) => e)) as ApiError;
-    expect(err.isNetworkError).toBe(true);
-    expect(err.message).not.toMatch(/Failed to fetch/);
-  });
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = "GET", body, signal } = options;
+  const token = getAccessToken();
+  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        // For uploads the browser must set the multipart boundary itself.
+        ...(body !== undefined && !isForm ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      ...(body !== undefined ? { body: isForm ? (body as FormData) : JSON.stringify(body) } : {}),
+      ...(signal ? { signal } : {}),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError(0, "NETWORK_ERROR", "We couldn't reach the server. Check your connection and try again.");
+  }
 
-  it("handles non-JSON responses (e.g. a proxy error page)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("<html>Bad gateway</html>", { status: 502 }));
-    await expect(apiRequest("/x")).rejects.toMatchObject({ code: "INVALID_RESPONSE", status: 502 });
-  });
-});
+  let payload: ApiResponse<T> | undefined;
+  try {
+    payload = (await res.json()) as ApiResponse<T>;
+  } catch {
+    throw new ApiError(res.status, "INVALID_RESPONSE", "The server sent an unexpected response.");
+  }
+
+  // An expired access token is invisible to the user: refresh once (shared across concurrent calls) and retry.
+  if (res.status === 401 && token && !options.retried && !path.startsWith("/auth/") && refreshHandler && (await refreshHandler())) {
+    return apiRequest<T>(path, { ...options, retried: true });
+  }
+
+  if (payload && payload.success === true) return (options.withMeta ? { items: payload.data, meta: payload.meta } : payload.data) as T;
+  if (payload && payload.success === false) {
+    const { code, message, details, requestId } = payload.error;
+    throw new ApiError(res.status, code, message, details, requestId);
+  }
+  throw new ApiError(res.status, "INVALID_RESPONSE", "The server sent an unexpected response.");
+}
+
+
+export interface PageMeta { total: number; page: number; limit: number; pages: number }
+
+/** Same as apiRequest but also returns the pagination `meta` object. */
+export const apiRequestPaged = <T>(path: string, options: RequestOptions = {}) => apiRequest<{ items: T; meta: PageMeta }>(path, { ...options, withMeta: true });

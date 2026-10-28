@@ -47,7 +47,7 @@ export default function LoginPage() {
       const state = location.state as LoginLocationState | null;
       const requestedPath = state?.from;
 
-      navigate(requestedPath || "/", { replace: true });
+      navigate(requestedPath || homeFor(me!.user.role), { replace: true });
     } catch (err) {
       setServerError(describeLoginError(err));
     }
